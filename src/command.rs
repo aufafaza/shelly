@@ -11,8 +11,7 @@
 
 use std::env::{current_dir, set_current_dir};
 use std::fs::File;
-use std::fs::{read_dir, remove_file};
-use std::io::Write;
+use std::fs::{read, read_dir, remove_file};
 pub fn execute_command(input: &str) {
     let str_parts: Vec<&str> = input.split_whitespace().collect();
     if str_parts.is_empty() {
@@ -70,6 +69,21 @@ pub fn execute_command(input: &str) {
                 println!("successfully removed file: {}", str_parts[1]);
             } else {
                 eprintln!("rm: (rm) (filename.[suffix])");
+            }
+        }
+
+        "cat" => {
+            if str_parts.len() == 2 {
+                // read returns bytes
+                if let Ok(output_bytes) = read(str_parts[1]) {
+                    let output_with_endlines_unseparated: String =
+                        String::from_utf8(output_bytes).unwrap();
+                    println!("{}", output_with_endlines_unseparated);
+                } else {
+                    eprintln!("error with reading file");
+                }
+            } else {
+                eprintln!("cat: (cat) (filename.[suffix])");
             }
         }
 
