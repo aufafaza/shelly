@@ -9,15 +9,16 @@
 - cat
 * */
 
+use anyhow::{Context, bail};
 use std::env::{current_dir, set_current_dir};
 use std::fs::{File, create_dir};
 use std::fs::{read_dir, remove_dir, remove_file};
 use std::io::{self, Write};
-
-use anyhow::{Context, bail};
+use std::process::Command as ProcessCommand;
 
 pub enum Command {
     BuiltIn(BuiltIn),
+    External { program: String, args: Vec<String> },
 }
 
 pub enum BuiltIn {
@@ -39,6 +40,18 @@ pub enum Execution {
 impl Command {
     pub fn execute(self) -> anyhow::Result<Execution> {
         match self {
+            Self::External { program, args } => {
+                let status = ProcessCommand::new(&program)
+                    .args(&args)
+                    .status()
+                    .with_context(|| format!("failed to execute: {program}"))?;
+
+                if !status.success() {
+                    eprintln!("{program}: exited with status {status}");
+                }
+
+                Ok(Execution::Continue)
+            }
             Self::BuiltIn(BuiltIn::Exit) => Ok(Execution::Exit),
             Self::BuiltIn(BuiltIn::Cat(path)) => {
                 let bytes =
@@ -49,27 +62,20 @@ impl Command {
                     .context("cat: cannot write to stdout")?;
                 Ok(Execution::Continue)
             }
-            Self::BuiltIn(BuiltIn::Cd(path)) => match set_current_dir(path) {
-                Ok(_) => Ok(Execution::Continue),
-                Err(e) => {
-                    eprintln!("error in changing directory {}", e);
-                    Ok(Execution::Exit)
-                }
-            },
+            Self::BuiltIn(BuiltIn::Cd(path)) => {
+                /* match set_current_dir(path) */
+                set_current_dir(&path)
+                    .with_context(|| format!("cd: cannot change directory {path}"))?;
+                Ok(Execution::Continue)
+            }
             Self::BuiltIn(BuiltIn::Echo(string)) => {
                 println!("{}", string);
                 Ok(Execution::Continue)
             }
-            Self::BuiltIn(BuiltIn::Pwd) => match current_dir() {
-                Ok(dir) => {
-                    println!("{}", dir.display());
-                    Ok(Execution::Continue)
-                }
-                Err(e) => {
-                    eprintln!("{}", e);
-                    Ok(Execution::Exit)
-                }
-            },
+            Self::BuiltIn(BuiltIn::Pwd) => {
+                current_dir().with_context(|| format!("pwd: cannot get current directory"))?;
+                Ok(Execution::Continue)
+            }
             Self::BuiltIn(BuiltIn::Ls) => match read_dir(current_dir().unwrap_or_default()) {
                 Ok(entries) => {
                     for entry in entries.flatten() {
@@ -79,29 +85,19 @@ impl Command {
                 }
                 Err(e) => {
                     eprintln!("{}", e);
-                    Ok(Execution::Exit)
-                }
-            },
-            Self::BuiltIn(BuiltIn::Mkdir(path)) => match create_dir(path) {
-                Ok(path) => {
-                    println!("created directory {path:?}");
                     Ok(Execution::Continue)
                 }
-                Err(e) => {
-                    eprintln!("{}", e);
-                    Ok(Execution::Exit)
-                }
             },
-            Self::BuiltIn(BuiltIn::Touch(path)) => match File::create_new(path) {
-                Ok(path) => {
-                    println!("successfully created file: {path:?}");
-                    Ok(Execution::Continue)
-                }
-                Err(e) => {
-                    println!("{}", e);
-                    Ok(Execution::Exit)
-                }
-            },
+            Self::BuiltIn(BuiltIn::Mkdir(path)) => {
+                create_dir(&path)
+                    .with_context(|| format!("mkdir: error creating a directory {path}"))?;
+                Ok(Execution::Continue)
+            }
+            Self::BuiltIn(BuiltIn::Touch(path)) => {
+                File::create_new(&path)
+                    .with_context(|| format!("touch: error creating a file {path}"))?;
+                Ok(Execution::Continue)
+            }
         }
     }
 }
@@ -123,11 +119,10 @@ pub fn execute_command(input: &str) -> anyhow::Result<Execution> {
         ["ls", ..] => bail!("ls: expected no arguments"),
         ["touch", path] => Command::BuiltIn(BuiltIn::Touch((*path).to_owned())),
         ["touch", ..] => bail!("touch: expected a dir"),
-
-        _ => {
-            execute_legacy(input);
-            return Ok(Execution::Continue);
-        }
+        [program, args @ ..] => Command::External {
+            program: (*program).to_owned(),
+            args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+        },
     };
     command.execute()
 }
