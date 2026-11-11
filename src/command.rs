@@ -9,7 +9,8 @@
 - cat
 * */
 
-use env::{current_dir, set_current_dir};
+use std::env::{current_dir, set_current_dir};
+use std::fs::read_dir;
 pub fn execute_command(input: &str) {
     let str_parts: Vec<&str> = input.split_whitespace().collect();
     if str_parts.is_empty() {
@@ -33,6 +34,18 @@ pub fn execute_command(input: &str) {
                 eprintln!("cd: (cd) (directory)");
             }
         }
+
+        "ls" => match read_dir(current_dir().unwrap_or_default()) {
+            Ok(entries) => {
+                // entries is ReadDir which is a Result<DirEntry, Error>
+                for entry in entries.flatten() {
+                    println!("{entry:?}");
+                }
+            }
+            Err(e) => {
+                eprintln!("ls error: {}", e);
+            }
+        },
         _ => {
             eprintln!("command {} not found", str_parts[0]);
         }
