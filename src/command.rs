@@ -11,7 +11,7 @@
 
 use std::env::{current_dir, set_current_dir};
 use std::fs::File;
-use std::fs::{read, read_dir, remove_file};
+use std::fs::{read, read_dir, remove_dir, remove_file};
 pub fn execute_command(input: &str) {
     let str_parts: Vec<&str> = input.split_whitespace().collect();
     if str_parts.is_empty() {
@@ -62,13 +62,36 @@ pub fn execute_command(input: &str) {
         }
 
         "rm" => {
-            if str_parts.len() == 2 {
-                if let Err(e) = remove_file(str_parts[1]) {
-                    eprintln!("error in removing file: {}", e);
+            // there must be a better way to do this
+            // like we shouldn't really rely on strlen
+            match str_parts.len() {
+                2 => {
+                    // delete a file
+                    if let Err(e) = remove_file(str_parts[1]) {
+                        eprintln!("error in removing file: {}", e);
+                    }
+                    println!("successfully removed file: {}", str_parts[1]);
                 }
-                println!("successfully removed file: {}", str_parts[1]);
-            } else {
-                eprintln!("rm: (rm) (filename.[suffix])");
+                3.. => {
+                    let parsed_flag: Vec<&str> = str_parts[1].split("-").collect();
+                    dbg!(parsed_flag.clone());
+                    println!("flag: {}, removing {}", parsed_flag[0], str_parts[2]);
+                    match parsed_flag[1] {
+                        "r" => {
+                            if let Err(e) = remove_dir(str_parts[2]) {
+                                eprintln!("error in removing directory: {}", e);
+                            }
+                            println!("successfully removed directory: {}", str_parts[2]);
+                        }
+                        _ => {
+                            eprintln!("flag unimplemented");
+                        }
+                    }
+                }
+                _ => {
+                    // < 2, error
+                    eprintln!("rm: (rm) (filename.[suffix] | dirname)");
+                }
             }
         }
 
