@@ -10,7 +10,7 @@
 * */
 
 use std::env::{current_dir, set_current_dir};
-use std::fs::File;
+use std::fs::{File, create_dir};
 use std::fs::{read, read_dir, remove_dir, remove_file};
 pub fn execute_command(input: &str) {
     let str_parts: Vec<&str> = input.split_whitespace().collect();
@@ -30,6 +30,7 @@ pub fn execute_command(input: &str) {
             if str_parts.len() == 2 {
                 if let Err(e) = set_current_dir(str_parts[1]) {
                     eprintln!("error in changing directory: {}", e);
+                    return;
                 }
             } else {
                 eprintln!("cd: (cd) (directory)");
@@ -74,6 +75,7 @@ pub fn execute_command(input: &str) {
                     }
                     if let Err(e) = remove_file(str_parts[1]) {
                         eprintln!("error in removing file: {}", e);
+                        return;
                     }
                     println!("successfully removed file: {}", str_parts[1]);
                 }
@@ -84,6 +86,7 @@ pub fn execute_command(input: &str) {
                         "r" => {
                             if let Err(e) = remove_dir(str_parts[2]) {
                                 eprintln!("error in removing directory: {}", e);
+                                return;
                             }
                             println!("successfully removed directory: {}", str_parts[2]);
                         }
@@ -113,7 +116,15 @@ pub fn execute_command(input: &str) {
                 eprintln!("cat: (cat) (filename.[suffix])");
             }
         }
-
+        "mkdir" => {
+            if str_parts.len() == 2 {
+                if let Err(e) = create_dir(str_parts[1]) {
+                    eprintln!("error in creating a directory: {}", e);
+                    return;
+                }
+                println!("successfully created a diretory {}", str_parts[1]);
+            }
+        }
         _ => {
             eprintln!("command {} not found", str_parts[0]);
         }
