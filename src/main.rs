@@ -23,12 +23,12 @@ pub fn spawn_user_input_handle() -> JoinHandle<CrateResult<()>> {
         let mut stdout = tokio::io::BufWriter::new(out);
 
         stdout.write(b"welcome to shell\n").await?;
-        stdout.write(b"\n>").await?;
+        stdout.write(b"\n> ").await?;
         stdout.flush().await?;
 
         while let Ok(Some(line)) = reader.next_line().await {
             execute_command(&line);
-            stdout.write(b"\n>").await?;
+            stdout.write(b"\n> ").await?;
             stdout.flush().await?;
         }
         Ok(())

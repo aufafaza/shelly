@@ -11,7 +11,7 @@
 
 use std::env::{current_dir, set_current_dir};
 use std::fs::File;
-use std::fs::read_dir;
+use std::fs::{read_dir, remove_file};
 use std::io::Write;
 pub fn execute_command(input: &str) {
     let str_parts: Vec<&str> = input.split_whitespace().collect();
@@ -59,6 +59,17 @@ pub fn execute_command(input: &str) {
                 }
             } else {
                 eprintln!("touch: (touch) (filename.[suffix])");
+            }
+        }
+
+        "rm" => {
+            if str_parts.len() == 2 {
+                if let Err(e) = remove_file(str_parts[1]) {
+                    eprintln!("error in removing file: {}", e);
+                }
+                println!("successfully removed file: {}", str_parts[1]);
+            } else {
+                eprintln!("rm: (rm) (filename.[suffix])");
             }
         }
 
