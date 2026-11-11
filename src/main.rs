@@ -1,12 +1,11 @@
-use shell::execute_command;
+use shell::{Execution, execute_command};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt},
     task::JoinHandle,
 };
 
-use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
-use std::{error::Error, fs::File};
+use std::fs::File;
 
 #[tokio::main]
 async fn main() {
@@ -47,11 +46,14 @@ pub fn spawn_user_input_handle(
         stdout.flush().await?;
 
         while let Ok(Some(line)) = reader.next_line().await {
-            if line == "exit" {
-                history.save_history(history_path)?;
-                return anyhow::Ok(());
+            match execute_command(&line) {
+                Ok(Execution::Exit) => {
+                    history.save_history(history_path)?;
+                    return Ok(());
+                }
+                Ok(Execution::Continue) => {}
+                Err(error) => eprintln!("{error:#}"),
             }
-            execute_command(&line);
             history.add_history_entry(line)?;
             stdout.write(b"\n> ").await?;
             stdout.flush().await?;
