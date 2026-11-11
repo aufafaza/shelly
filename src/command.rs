@@ -18,7 +18,11 @@ use std::process::Command as ProcessCommand;
 
 pub enum Command {
     BuiltIn(BuiltIn),
-    External { program: String, args: Vec<String> },
+    External {
+        program: String,
+        args: Vec<String>,
+        background: bool,
+    },
 }
 
 pub enum BuiltIn {
@@ -40,16 +44,17 @@ pub enum Execution {
 impl Command {
     pub fn execute(self) -> anyhow::Result<Execution> {
         match self {
-            Self::External { program, args } => {
-                let status = ProcessCommand::new(&program)
-                    .args(&args)
-                    .status()
-                    .with_context(|| format!("failed to execute: {program}"))?;
-
-                if !status.success() {
-                    eprintln!("{program}: exited with status {status}");
+            Self::External {
+                program,
+                args,
+                background,
+            } => {
+                let mut child = ProcessCommand::new(&program).args(&args).spawn()?;
+                println!("Child pID: {}", child.id());
+                println!("doing other work");
+                if !background {
+                    child.wait()?;
                 }
-
                 Ok(Execution::Continue)
             }
             Self::BuiltIn(BuiltIn::Exit) => Ok(Execution::Exit),
@@ -103,7 +108,13 @@ impl Command {
 }
 
 pub fn execute_command(input: &str) -> anyhow::Result<Execution> {
-    let parts: Vec<&str> = input.split_whitespace().collect();
+    let mut parts: Vec<&str> = input.split_whitespace().collect();
+    let background = if parts.last() == Some(&"&") {
+        parts.pop();
+        true
+    } else {
+        false
+    };
     let command = match parts.as_slice() {
         [] => return Ok(Execution::Continue),
         ["exit"] => Command::BuiltIn(BuiltIn::Exit),
@@ -122,6 +133,7 @@ pub fn execute_command(input: &str) -> anyhow::Result<Execution> {
         [program, args @ ..] => Command::External {
             program: (*program).to_owned(),
             args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+            background,
         },
     };
     command.execute()
