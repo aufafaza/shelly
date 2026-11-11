@@ -1,3 +1,5 @@
 mod command;
+pub mod shell;
 
-pub use command::{BuiltIn, Command, Execution, execute_command};
+pub use command::{BuiltIn, Command, Execution};
+pub use shell::Shell;

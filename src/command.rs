@@ -9,12 +9,8 @@
 - cat
 * */
 
-use anyhow::{Context, bail};
-use std::env::{current_dir, set_current_dir};
-use std::fs::{File, create_dir};
-use std::fs::{read_dir, remove_dir, remove_file};
-use std::io::{self, Write};
-use std::process::Command as ProcessCommand;
+use anyhow::bail;
+use std::fs::{remove_dir, remove_file};
 
 pub enum Command {
     BuiltIn(BuiltIn),
@@ -42,101 +38,37 @@ pub enum Execution {
 }
 
 impl Command {
-    pub fn execute(self) -> anyhow::Result<Execution> {
-        match self {
-            Self::External {
-                program,
-                args,
+    pub fn parse(input: &str) -> anyhow::Result<Option<Self>> {
+        let mut parts: Vec<&str> = input.split_whitespace().collect();
+        let background = if parts.last() == Some(&"&") {
+            parts.pop();
+            true
+        } else {
+            false
+        };
+        let command = match parts.as_slice() {
+            [] => return Ok(None),
+            ["exit"] => Command::BuiltIn(BuiltIn::Exit),
+            ["exit", ..] => bail!("exit: expected no arguments"),
+            ["cat", path] => Command::BuiltIn(BuiltIn::Cat((*path).to_owned())),
+            ["cat", ..] => bail!("cat: expected one filename"),
+            ["cd", path] => Command::BuiltIn(BuiltIn::Cd((*path).to_owned())),
+            ["cd", ..] => bail!("cd: expected a dir"),
+            ["echo", str_] => Command::BuiltIn(BuiltIn::Echo((*str_).to_owned())),
+            ["pwd"] => Command::BuiltIn(BuiltIn::Pwd),
+            ["pwd", ..] => bail!("pwd: expected no arguments"),
+            ["ls"] => Command::BuiltIn(BuiltIn::Ls),
+            ["ls", ..] => bail!("ls: expected no arguments"),
+            ["touch", path] => Command::BuiltIn(BuiltIn::Touch((*path).to_owned())),
+            ["touch", ..] => bail!("touch: expected a dir"),
+            [program, args @ ..] => Command::External {
+                program: (*program).to_owned(),
+                args: args.iter().map(|arg| (*arg).to_owned()).collect(),
                 background,
-            } => {
-                let mut child = ProcessCommand::new(&program).args(&args).spawn()?;
-                println!("Child pID: {}", child.id());
-                println!("doing other work");
-                if !background {
-                    child.wait()?;
-                }
-                Ok(Execution::Continue)
-            }
-            Self::BuiltIn(BuiltIn::Exit) => Ok(Execution::Exit),
-            Self::BuiltIn(BuiltIn::Cat(path)) => {
-                let bytes =
-                    std::fs::read(&path).with_context(|| format!("cat: cannot read {path}"))?;
-                io::stdout()
-                    .lock()
-                    .write_all(&bytes)
-                    .context("cat: cannot write to stdout")?;
-                Ok(Execution::Continue)
-            }
-            Self::BuiltIn(BuiltIn::Cd(path)) => {
-                /* match set_current_dir(path) */
-                set_current_dir(&path)
-                    .with_context(|| format!("cd: cannot change directory {path}"))?;
-                Ok(Execution::Continue)
-            }
-            Self::BuiltIn(BuiltIn::Echo(string)) => {
-                println!("{}", string);
-                Ok(Execution::Continue)
-            }
-            Self::BuiltIn(BuiltIn::Pwd) => {
-                current_dir().with_context(|| format!("pwd: cannot get current directory"))?;
-                Ok(Execution::Continue)
-            }
-            Self::BuiltIn(BuiltIn::Ls) => match read_dir(current_dir().unwrap_or_default()) {
-                Ok(entries) => {
-                    for entry in entries.flatten() {
-                        println!("{}", entry.path().display());
-                    }
-                    Ok(Execution::Continue)
-                }
-                Err(e) => {
-                    eprintln!("{}", e);
-                    Ok(Execution::Continue)
-                }
             },
-            Self::BuiltIn(BuiltIn::Mkdir(path)) => {
-                create_dir(&path)
-                    .with_context(|| format!("mkdir: error creating a directory {path}"))?;
-                Ok(Execution::Continue)
-            }
-            Self::BuiltIn(BuiltIn::Touch(path)) => {
-                File::create_new(&path)
-                    .with_context(|| format!("touch: error creating a file {path}"))?;
-                Ok(Execution::Continue)
-            }
-        }
+        };
+        Ok(Some(command))
     }
-}
-
-pub fn execute_command(input: &str) -> anyhow::Result<Execution> {
-    let mut parts: Vec<&str> = input.split_whitespace().collect();
-    let background = if parts.last() == Some(&"&") {
-        parts.pop();
-        true
-    } else {
-        false
-    };
-    let command = match parts.as_slice() {
-        [] => return Ok(Execution::Continue),
-        ["exit"] => Command::BuiltIn(BuiltIn::Exit),
-        ["exit", ..] => bail!("exit: expected no arguments"),
-        ["cat", path] => Command::BuiltIn(BuiltIn::Cat((*path).to_owned())),
-        ["cat", ..] => bail!("cat: expected one filename"),
-        ["cd", path] => Command::BuiltIn(BuiltIn::Cd((*path).to_owned())),
-        ["cd", ..] => bail!("cd: expected a dir"),
-        ["echo", str_] => Command::BuiltIn(BuiltIn::Echo((*str_).to_owned())),
-        ["pwd"] => Command::BuiltIn(BuiltIn::Pwd),
-        ["pwd", ..] => bail!("pwd: expected no arguments"),
-        ["ls"] => Command::BuiltIn(BuiltIn::Ls),
-        ["ls", ..] => bail!("ls: expected no arguments"),
-        ["touch", path] => Command::BuiltIn(BuiltIn::Touch((*path).to_owned())),
-        ["touch", ..] => bail!("touch: expected a dir"),
-        [program, args @ ..] => Command::External {
-            program: (*program).to_owned(),
-            args: args.iter().map(|arg| (*arg).to_owned()).collect(),
-            background,
-        },
-    };
-    command.execute()
 }
 
 fn execute_legacy(input: &str) {
