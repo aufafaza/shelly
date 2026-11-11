@@ -64,17 +64,21 @@ pub fn execute_command(input: &str) {
         "rm" => {
             // there must be a better way to do this
             // like we shouldn't really rely on strlen
+            let parsed_flag: Vec<&str> = str_parts[1].split("-").collect();
             match str_parts.len() {
                 2 => {
                     // delete a file
+                    if !parsed_flag.is_empty() {
+                        eprintln!("must specify directory to use -r flag");
+                        return;
+                    }
                     if let Err(e) = remove_file(str_parts[1]) {
                         eprintln!("error in removing file: {}", e);
                     }
                     println!("successfully removed file: {}", str_parts[1]);
                 }
                 3.. => {
-                    let parsed_flag: Vec<&str> = str_parts[1].split("-").collect();
-                    dbg!(parsed_flag.clone());
+                    // let parsed_flag: Vec<&str> = str_parts[1].split("-").collect();
                     println!("flag: {}, removing {}", parsed_flag[0], str_parts[2]);
                     match parsed_flag[1] {
                         "r" => {
