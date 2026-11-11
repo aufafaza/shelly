@@ -5,4 +5,6 @@ a brain exercise by making a shell
 - `tokio` 
 - `anyhow` 
 
-
+# TODO 
+- implement setting and getting environment variables
+- implement pipe commands
