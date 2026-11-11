@@ -41,7 +41,7 @@ pub fn execute_command(input: &str) {
             Ok(entries) => {
                 // entries is ReadDir which is a Result<DirEntry, Error>
                 for entry in entries.flatten() {
-                    println!("{entry:?}");
+                    println!("{}", entry.path().display());
                 }
             }
             Err(e) => {
