@@ -10,7 +10,9 @@
 * */
 
 use std::env::{current_dir, set_current_dir};
+use std::fs::File;
 use std::fs::read_dir;
+use std::io::Write;
 pub fn execute_command(input: &str) {
     let str_parts: Vec<&str> = input.split_whitespace().collect();
     if str_parts.is_empty() {
@@ -46,6 +48,20 @@ pub fn execute_command(input: &str) {
                 eprintln!("ls error: {}", e);
             }
         },
+
+        "touch" => {
+            if str_parts.len() == 2 {
+                match File::create_new(str_parts[1]) {
+                    Ok(_) => {
+                        println!("created new file: {}", str_parts[1])
+                    }
+                    Err(e) => eprintln!("failed to create file {} with error {}", str_parts[1], e),
+                }
+            } else {
+                eprintln!("touch: (touch) (filename.[suffix])");
+            }
+        }
+
         _ => {
             eprintln!("command {} not found", str_parts[0]);
         }
