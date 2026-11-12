@@ -48,9 +48,14 @@ impl Shell {
             // clean jobs
             self.collect_and_kill_jobs().await?;
             match Command::parse(&line) {
-                Ok(commands) => {
-                    self.execute_pipeline(commands)?;
-                }
+                Ok(commands) => match self.execute_pipeline(commands)? {
+                    Execution::Continue => {}
+                    Execution::Exit => {
+                        self.history.save_history(history_path)?;
+                        return Ok(());
+                    }
+                },
+
                 Err(e) => eprintln!("{e:?}"),
             }
             self.history.add_history_entry(line)?;
@@ -92,7 +97,7 @@ impl Shell {
             match command {
                 // setup stdin stdout for piping
                 Command::BuiltIn(builtin) => match self.execute_builtin(builtin)? {
-                    Execution::Exit => return Ok(Execution::Exit),
+                    Execution::Exit => return { Ok(Execution::Exit) },
                     Execution::Continue => {}
                 },
                 // takes stdout output from the previous external command
@@ -146,6 +151,7 @@ impl Shell {
         match builtin {
             BuiltIn::Exit => {
                 self.running = false;
+                println!("Goodbye");
                 Ok(Execution::Exit)
             }
             BuiltIn::Cd(path) => {
