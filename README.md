@@ -7,4 +7,4 @@ a brain exercise by making a shell
 
 # TODO 
 - implement setting and getting environment variables
-- implement pipe commands
+- implement pipe commands -> {DONE}
