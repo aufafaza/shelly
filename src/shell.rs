@@ -1,13 +1,10 @@
 use crate::{BuiltIn, Command, Execution};
 use anyhow::Context;
 use rustyline::{DefaultEditor, error::ReadlineError};
-use std::env::{current_dir, set_current_dir};
-use std::fs::{create_dir, read_dir};
-use std::io::{self, Write};
+use std::env::set_current_dir;
 use std::process::Command as ProcessCommand;
 use std::{fs::File, process::Child};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-
 pub struct Shell {
     jobs: Vec<Child>,
     running: bool,
@@ -50,16 +47,11 @@ impl Shell {
         while let Ok(Some(line)) = reader.next_line().await {
             // clean jobs
             self.collect_and_kill_jobs().await?;
-            match Command::parse(&line).and_then(|command| match command {
-                Some(command) => self.execute(command),
-                None => Ok(Execution::Continue),
-            }) {
-                Ok(Execution::Exit) => {
-                    self.history.save_history(history_path)?;
-                    return Ok(());
+            match Command::parse(&line) {
+                Ok(commands) => {
+                    self.execute_pipeline(commands)?;
                 }
-                Ok(Execution::Continue) => {}
-                Err(error) => eprintln!("{error:#}"),
+                Err(e) => eprintln!("{e:?}"),
             }
             self.history.add_history_entry(line)?;
             stdout.write(b"\n> ").await?;
@@ -84,6 +76,7 @@ impl Shell {
 }
 
 impl Shell {
+    pub fn execute_pipeline(&mut self, commands: Vec<Command>) -> anyhow::Result<Execution> {}
     pub fn execute(&mut self, command: Command) -> anyhow::Result<Execution> {
         match command {
             Command::External {
@@ -106,49 +99,10 @@ impl Shell {
                 self.running = false;
                 Ok(Execution::Exit)
             }
-            Command::BuiltIn(BuiltIn::Cat(path)) => {
-                let bytes =
-                    std::fs::read(&path).with_context(|| format!("cat: cannot read {path}"))?;
-                io::stdout()
-                    .lock()
-                    .write_all(&bytes)
-                    .context("cat: cannot write to stdout")?;
-                Ok(Execution::Continue)
-            }
             Command::BuiltIn(BuiltIn::Cd(path)) => {
                 /* match set_current_dir(path) */
                 set_current_dir(&path)
                     .with_context(|| format!("cd: cannot change directory {path}"))?;
-                Ok(Execution::Continue)
-            }
-            Command::BuiltIn(BuiltIn::Echo(string)) => {
-                println!("{}", string);
-                Ok(Execution::Continue)
-            }
-            Command::BuiltIn(BuiltIn::Pwd) => {
-                current_dir().with_context(|| format!("pwd: cannot get current directory"))?;
-                Ok(Execution::Continue)
-            }
-            Command::BuiltIn(BuiltIn::Ls) => match read_dir(current_dir().unwrap_or_default()) {
-                Ok(entries) => {
-                    for entry in entries.flatten() {
-                        println!("{}", entry.path().display());
-                    }
-                    Ok(Execution::Continue)
-                }
-                Err(e) => {
-                    eprintln!("{}", e);
-                    Ok(Execution::Continue)
-                }
-            },
-            Command::BuiltIn(BuiltIn::Mkdir(path)) => {
-                create_dir(&path)
-                    .with_context(|| format!("mkdir: error creating a directory {path}"))?;
-                Ok(Execution::Continue)
-            }
-            Command::BuiltIn(BuiltIn::Touch(path)) => {
-                File::create_new(&path)
-                    .with_context(|| format!("touch: error creating a file {path}"))?;
                 Ok(Execution::Continue)
             }
         }
