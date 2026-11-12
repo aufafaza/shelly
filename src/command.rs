@@ -1,5 +1,6 @@
 use anyhow::bail;
 
+#[derive(Debug)]
 pub enum Command {
     BuiltIn(BuiltIn),
     External {
@@ -9,6 +10,7 @@ pub enum Command {
     },
 }
 
+#[derive(Debug)]
 pub enum BuiltIn {
     Cd(String),
     Exit,
@@ -25,7 +27,7 @@ impl Command {
             return Ok(Vec::new());
         }
         let mut commands = Vec::new();
-        for segment in input.split(" | ") {
+        for segment in input.split(" | ").peekable() {
             let mut parts: Vec<&str> = segment.split_whitespace().collect();
             if parts.is_empty() {
                 bail!("expected commands after |");

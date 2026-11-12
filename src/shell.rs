@@ -2,7 +2,7 @@ use crate::{BuiltIn, Command, Execution};
 use anyhow::Context;
 use rustyline::{DefaultEditor, error::ReadlineError};
 use std::env::set_current_dir;
-use std::process::Command as ProcessCommand;
+use std::process::{ChildStdout, Command as ProcessCommand, Stdio};
 use std::{fs::File, process::Child};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 pub struct Shell {
@@ -65,7 +65,7 @@ impl Shell {
         while i < self.jobs.len() {
             if let Some(status) = self.jobs[i].try_wait()? {
                 println!("PID {} finished: {}", self.jobs[i].id(), status);
-                self.last_exit_status = status.code().unwrap();
+                self.last_exit_status = status.code().unwrap_or(1);
                 self.jobs.swap_remove(i);
             } else {
                 i += 1;
@@ -76,30 +76,79 @@ impl Shell {
 }
 
 impl Shell {
-    pub fn execute_pipeline(&mut self, commands: Vec<Command>) -> anyhow::Result<Execution> {}
-    pub fn execute(&mut self, command: Command) -> anyhow::Result<Execution> {
-        match command {
-            Command::External {
-                program,
-                args,
-                background,
-            } => {
-                let child = ProcessCommand::new(&program).args(&args).spawn()?;
-                println!("Child pID: {}", child.id());
-                println!("doing other work");
-                if background {
-                    self.jobs.push(child);
-                } else {
-                    let mut child = child;
-                    child.wait()?;
+    pub fn execute_pipeline(&mut self, commands: Vec<Command>) -> anyhow::Result<Execution> {
+        let background = matches!(
+            commands.last(),
+            Some(Command::External {
+                background: true,
+                ..
+            })
+        );
+        let mut children = Vec::new();
+        let mut prev_stdout: Option<ChildStdout> = None;
+        let mut commands = commands.into_iter().peekable();
+        while let Some(command) = commands.next() {
+            let is_last = commands.peek().is_none();
+            match command {
+                // setup stdin stdout for piping
+                Command::BuiltIn(builtin) => match self.execute_builtin(builtin)? {
+                    Execution::Exit => return Ok(Execution::Exit),
+                    Execution::Continue => {}
+                },
+                // takes stdout output from the previous external command
+                Command::External {
+                    program,
+                    args,
+                    background: _,
+                } => {
+                    let stdin = match prev_stdout.take() {
+                        Some(output) => Stdio::from(output),
+                        None => Stdio::inherit(),
+                    };
+
+                    let stdout = if is_last {
+                        Stdio::inherit()
+                    } else {
+                        Stdio::piped()
+                    };
+
+                    let child = ProcessCommand::new(program)
+                        .args(args)
+                        .stdin(stdin)
+                        .stdout(stdout)
+                        .spawn();
+
+                    match child {
+                        Ok(mut child) => {
+                            prev_stdout = child.stdout.take();
+                            children.push(child);
+                        }
+                        Err(e) => {
+                            eprintln!("failed to execute {}", e);
+                            break;
+                        }
+                    }
                 }
-                Ok(Execution::Continue)
             }
-            Command::BuiltIn(BuiltIn::Exit) => {
+        }
+        drop(prev_stdout);
+        if background {
+            self.jobs.extend(children);
+        } else {
+            for mut child in children {
+                let status = child.wait()?;
+                self.last_exit_status = status.code().unwrap_or(1);
+            }
+        }
+        Ok(Execution::Continue)
+    }
+    pub fn execute_builtin(&mut self, builtin: BuiltIn) -> anyhow::Result<Execution> {
+        match builtin {
+            BuiltIn::Exit => {
                 self.running = false;
                 Ok(Execution::Exit)
             }
-            Command::BuiltIn(BuiltIn::Cd(path)) => {
+            BuiltIn::Cd(path) => {
                 /* match set_current_dir(path) */
                 set_current_dir(&path)
                     .with_context(|| format!("cd: cannot change directory {path}"))?;
