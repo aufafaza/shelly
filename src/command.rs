@@ -1,5 +1,4 @@
 use anyhow::bail;
-
 #[derive(Debug)]
 pub enum Command {
     BuiltIn(BuiltIn),

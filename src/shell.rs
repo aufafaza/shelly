@@ -1,24 +1,38 @@
 use crate::{BuiltIn, Command, Execution};
 use anyhow::Context;
-use rustyline::{DefaultEditor, error::ReadlineError};
+use rustyline::error::ReadlineError;
+use rustyline::hint::HistoryHinter;
+use rustyline::history::DefaultHistory;
+use rustyline::{Completer, Editor, Helper, Highlighter, Hinter, Validator};
 use std::env::set_current_dir;
 use std::process::{ChildStdout, Command as ProcessCommand, Stdio};
 use std::{fs::File, process::Child};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 pub struct Shell {
     jobs: Vec<Child>,
     running: bool,
     last_exit_status: i32,
-    history: DefaultEditor,
+    history: Editor<MyHelper, DefaultHistory>,
+}
+
+#[derive(Completer, Helper, Highlighter, Hinter, Validator)]
+pub struct MyHelper {
+    #[rustyline(Hinter)]
+    hinter: HistoryHinter,
 }
 
 impl Shell {
     pub fn new() -> anyhow::Result<Self> {
+        let helper = MyHelper {
+            hinter: HistoryHinter::new(),
+        };
+        let mut history = Editor::<MyHelper, DefaultHistory>::new()?;
+        history.set_helper(Some(helper));
+
         Ok(Self {
             jobs: Vec::new(),
             running: true,
             last_exit_status: 0,
-            history: DefaultEditor::new()?,
+            history,
         })
     }
 
@@ -34,34 +48,28 @@ impl Shell {
                 eprintln!("failed to read or write history file {}", e);
             }
         }
+        println!("welcome to shell");
 
-        let stdin = tokio::io::stdin();
-        let out = tokio::io::stdout();
-        let mut reader = tokio::io::BufReader::new(stdin).lines();
-        let mut stdout = tokio::io::BufWriter::new(out);
-
-        stdout.write(b"welcome to shell\n").await?;
-        stdout.write(b"\n> ").await?;
-        stdout.flush().await?;
-
-        while let Ok(Some(line)) = reader.next_line().await {
-            // clean jobs
+        while self.running {
             self.collect_and_kill_jobs().await?;
-            match Command::parse(&line) {
-                Ok(commands) => match self.execute_pipeline(commands)? {
-                    Execution::Continue => {}
-                    Execution::Exit => {
-                        self.history.save_history(history_path)?;
-                        return Ok(());
-                    }
-                },
+            let line = match self.history.readline("> ") {
+                Ok(line) => line,
+                Err(ReadlineError::Interrupted) => continue,
+                Err(ReadlineError::Eof) => break,
+                Err(error) => {
+                    self.history.save_history(history_path)?;
+                    return Err(error.into());
+                }
+            };
+            self.history.add_history_entry(line.as_str())?;
 
-                Err(e) => eprintln!("{e:?}"),
+            match Command::parse(&line).and_then(|commands| self.execute_pipeline(commands)) {
+                Ok(Execution::Continue) => {}
+                Ok(Execution::Exit) => break,
+                Err(error) => eprintln!("{error:#}"),
             }
-            self.history.add_history_entry(line)?;
-            stdout.write(b"\n> ").await?;
-            stdout.flush().await?;
         }
+        self.history.save_history(history_path)?;
         Ok(())
     }
 
@@ -97,7 +105,7 @@ impl Shell {
             match command {
                 // setup stdin stdout for piping
                 Command::BuiltIn(builtin) => match self.execute_builtin(builtin)? {
-                    Execution::Exit => return { Ok(Execution::Exit) },
+                    Execution::Exit => return Ok(Execution::Exit),
                     Execution::Continue => {}
                 },
                 // takes stdout output from the previous external command
